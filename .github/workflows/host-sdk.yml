@@ -45,7 +45,7 @@ jobs:
         run: |
           sha=$(git -C exteraGram rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          gradle=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-.*//p' exteraGram/gradle/wrapper/gradle-wrapper.properties)
+          gradle=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-.*/\1/p' exteraGram/gradle/wrapper/gradle-wrapper.properties)
           echo "gradle=$gradle" >> "$GITHUB_OUTPUT"
           current=$(gh release view host-sdk -R "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null || true)
           if [ "${{ inputs.force }}" != true ] && grep -q "$sha" <<< "$current"; then
