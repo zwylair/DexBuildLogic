@@ -15,9 +15,9 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: zwylair/DexBuildLogic
           ref: ${{ inputs.logic-ref }}
@@ -28,12 +28,12 @@ jobs:
           curl -fsSL -o "$RUNNER_TEMP/host-sdk.zip" https://github.com/zwylair/DexBuildLogic/releases/download/host-sdk/host-sdk.zip
           unzip -q "$RUNNER_TEMP/host-sdk.zip" -d "$RUNNER_TEMP/host-sdk"
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build
         run: |
@@ -50,7 +50,7 @@ jobs:
           cp dex/build/packed/classes.dex.xz.b64 "out/$name.dex.xz.b64"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.files.outputs.name }}
           path: out/*
