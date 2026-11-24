@@ -45,6 +45,8 @@ jobs:
         run: |
           sha=$(git -C exteraGram rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          gradle=$(sed -n 's/^distributionUrl=.*gradle-\([0-9.]*\)-.*//p' exteraGram/gradle/wrapper/gradle-wrapper.properties)
+          echo "gradle=$gradle" >> "$GITHUB_OUTPUT"
           current=$(gh release view host-sdk -R "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null || true)
           if [ "${{ inputs.force }}" != true ] && grep -q "$sha" <<< "$current"; then
             echo "host-sdk is already built from $sha"
@@ -58,7 +60,6 @@ jobs:
           git submodule update --init --depth 1 TMessagesProj/lib/jlatexmath TMessagesProj_Modules/media
           printf '%s\n' APP_ID=0 'APP_HASH=""' MAPS_V2_API=none \
             SIGNING_KEY_PASSWORD=none SIGNING_KEY_ALIAS=none SIGNING_KEY_STORE_PASSWORD=none > API_KEYS
-          chmod +x gradlew
 
       - uses: actions/setup-java@v5
         if: steps.check.outputs.skip != 'true'
@@ -75,14 +76,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         if: steps.check.outputs.skip != 'true'
         with:
-          gradle-version: "9.6.1"
+          gradle-version: ${{ steps.check.outputs.gradle }}
+          validate-wrappers: false
 
       - name: Compile the host
         if: steps.check.outputs.skip != 'true'
         working-directory: exteraGram
         env:
           BUILD_PYTHON: ${{ steps.python.outputs.python-path }}
-        run: ./gradlew :TMessagesProj:compileFullAfatDebugKotlin :TMessagesProj:compileFullAfatDebugJavaWithJavac
+        run: gradle :TMessagesProj:compileFullAfatDebugKotlin :TMessagesProj:compileFullAfatDebugJavaWithJavac
 
       - name: Export the host SDK
         if: steps.check.outputs.skip != 'true'
