@@ -1,0 +1,65 @@
+name: Build DEX
+
+on:
+  workflow_call:
+    inputs:
+      logic-ref:
+        description: DexBuildLogic ref to build with
+        type: string
+        default: main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/checkout@v5
+        with:
+          repository: zwylair/DexBuildLogic
+          ref: ${{ inputs.logic-ref }}
+          path: .dex-build-logic
+
+      - name: Download host SDK
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/host-sdk.zip" https://github.com/zwylair/DexBuildLogic/releases/download/host-sdk/host-sdk.zip
+          unzip -q "$RUNNER_TEMP/host-sdk.zip" -d "$RUNNER_TEMP/host-sdk"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew :dex:packDex -Pbuildlogic.dir=.dex-build-logic -Phost.sdk="$RUNNER_TEMP/host-sdk"
+
+      - name: Collect files
+        id: files
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version="$GITHUB_REF_NAME"; else version="${GITHUB_SHA::7}"; fi
+          name="${GITHUB_REPOSITORY#*/}-$version"
+          mkdir -p out
+          cp dex/build/dex/classes.dex "out/$name.dex"
+          cp dex/build/packed/classes.dex.xz.b64 "out/$name.dex.xz.b64"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.files.outputs.name }}
+          path: out/*
+
+      - name: Attach to release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+          gh release upload "$GITHUB_REF_NAME" out/* -R "$GITHUB_REPOSITORY" --clobber

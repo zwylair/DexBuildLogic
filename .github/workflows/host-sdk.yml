@@ -1,0 +1,101 @@
+name: Host SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: exteraSquad/exteraGram branch, tag or commit
+        default: main
+      force:
+        description: Rebuild even if the release already has this commit
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 3 * * *"
+
+concurrency:
+  group: host-sdk
+
+permissions:
+  contents: write
+
+env:
+  HOST_REPO: exteraSquad/exteraGram
+  HOST_REF: ${{ inputs.ref || 'main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: logic
+
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.HOST_REPO }}
+          ref: ${{ env.HOST_REF }}
+          path: exteraGram
+
+      - name: Check for a new host commit
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git -C exteraGram rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          current=$(gh release view host-sdk -R "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null || true)
+          if [ "${{ inputs.force }}" != true ] && grep -q "$sha" <<< "$current"; then
+            echo "host-sdk is already built from $sha"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare the host checkout
+        if: steps.check.outputs.skip != 'true'
+        working-directory: exteraGram
+        run: |
+          git submodule update --init --depth 1 TMessagesProj/lib/jlatexmath TMessagesProj_Modules/media
+          printf '%s\n' APP_ID=0 'APP_HASH=""' MAPS_V2_API=none \
+            SIGNING_KEY_PASSWORD=none SIGNING_KEY_ALIAS=none SIGNING_KEY_STORE_PASSWORD=none > API_KEYS
+          chmod +x gradlew
+
+      - uses: actions/setup-java@v5
+        if: steps.check.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-python@v6
+        if: steps.check.outputs.skip != 'true'
+        id: python
+        with:
+          python-version: "3.11"
+
+      - uses: gradle/actions/setup-gradle@v5
+        if: steps.check.outputs.skip != 'true'
+        with:
+          gradle-version: "9.6.1"
+
+      - name: Compile the host
+        if: steps.check.outputs.skip != 'true'
+        working-directory: exteraGram
+        env:
+          BUILD_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: ./gradlew :TMessagesProj:compileFullAfatDebugKotlin :TMessagesProj:compileFullAfatDebugJavaWithJavac
+
+      - name: Export the host SDK
+        if: steps.check.outputs.skip != 'true'
+        working-directory: logic/host-sdk
+        run: gradle exportHostSdk -Phost.dir="$GITHUB_WORKSPACE/exteraGram"
+
+      - name: Publish
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.check.outputs.sha }}
+        run: |
+          gh release view host-sdk -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
+            || gh release create host-sdk -R "$GITHUB_REPOSITORY" --title "Host SDK" --notes "" --latest=false
+          gh release upload host-sdk logic/host-sdk/build/host-sdk.zip -R "$GITHUB_REPOSITORY" --clobber
+          gh release edit host-sdk -R "$GITHUB_REPOSITORY" --notes "Built from $HOST_REPO@$SHA ($HOST_REF)"
